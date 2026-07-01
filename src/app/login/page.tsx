@@ -21,11 +21,12 @@ function translateAuthError(error?: string) {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; message?: string; next?: string }>;
+  searchParams: Promise<{ error?: string; message?: string; redirect?: string; next?: string }>;
 }) {
   const params = await searchParams;
   const configured = isSupabaseConfigured();
   const error = translateAuthError(params.error);
+  const redirectTo = params.redirect || params.next || "/dashboard";
 
   return (
     <main className="grid min-h-screen grid-cols-1 bg-[#eef3fb] lg:grid-cols-[1.08fr_0.92fr]">
@@ -67,7 +68,7 @@ export default async function LoginPage({
         <div className="w-full max-w-md rounded-[32px] border border-white/80 bg-white/80 p-8 shadow-[0_24px_80px_rgba(30,41,59,0.12)] backdrop-blur-xl">
           <h2 className="text-2xl font-semibold text-slate-950">登录 Workspace</h2>
           <p className="mt-2 text-sm leading-6 text-slate-500">
-            第二阶段已接入 Supabase Auth。注册或登录后会自动创建一组 Second AI mock data。
+            输入邮箱和密码登录；如果是新账号，系统会自动注册并进入。
           </p>
 
           {!configured ? (
@@ -90,6 +91,7 @@ export default async function LoginPage({
           ) : null}
 
           <form className="mt-8 space-y-4">
+            <input type="hidden" name="redirect" value={redirectTo} />
             <label className="block">
               <span className="text-sm font-medium text-slate-700">邮箱</span>
               <input
@@ -119,7 +121,7 @@ export default async function LoginPage({
                 className="flex h-11 w-full items-center justify-center rounded-xl bg-gradient-to-r from-slate-950 to-indigo-950 text-sm font-semibold text-white shadow-lg shadow-slate-900/12 disabled:opacity-50"
                 disabled={!configured}
               >
-                登录
+                登录 / 自动注册
               </button>
               <button
                 formAction={signUpAction}

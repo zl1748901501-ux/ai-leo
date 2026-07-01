@@ -5,7 +5,7 @@ import { useState } from "react";
 const visibilityOptions = [
   ["private", "私密", "不读取、引用或展示"],
   ["answer_only", "仅回答", "回答但不展示卡片"],
-  ["display", "可展示", "回答并展示作品卡片"],
+  ["show", "可展示", "回答并展示作品卡片"],
 ] as const;
 
 export function VisibilitySelector({ current }: { current: string }) {
@@ -15,9 +15,10 @@ export function VisibilitySelector({ current }: { current: string }) {
     <div className="mt-4 grid gap-3 sm:grid-cols-3">
       <input type="hidden" name="visibility" value={selected} />
       {visibilityOptions.map(([value, title, desc]) => {
-        const isSaved = current === value;
-        const isDraft = selected === value && selected !== current;
-        const hasUnsavedChange = selected !== current;
+        const normalizedCurrent = current;
+        const isSaved = normalizedCurrent === value;
+        const isDraft = selected === value && selected !== normalizedCurrent;
+        const hasUnsavedChange = selected !== normalizedCurrent;
         const isPreviousSaved = isSaved && hasUnsavedChange;
         const textClass = isSaved
           ? isPreviousSaved
@@ -43,9 +44,7 @@ export function VisibilitySelector({ current }: { current: string }) {
             }`}
           >
             <span className="block text-sm font-semibold">{title}</span>
-            <span className={`mt-2 block text-xs leading-5 ${textClass}`}>
-              {desc}
-            </span>
+            <span className={`mt-2 block text-xs leading-5 ${textClass}`}>{desc}</span>
             {isDraft ? (
               <span className="mt-3 inline-flex rounded-full border border-blue-200 bg-white/70 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
                 未保存

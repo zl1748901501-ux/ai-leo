@@ -38,14 +38,44 @@ export async function updateSession(request: NextRequest) {
   if (!user && isOwnerRoute) {
     const urlToRedirect = request.nextUrl.clone();
     urlToRedirect.pathname = "/login";
-    urlToRedirect.searchParams.set("next", request.nextUrl.pathname);
+    urlToRedirect.searchParams.set("redirect", `${request.nextUrl.pathname}${request.nextUrl.search}`);
     return NextResponse.redirect(urlToRedirect);
+  }
+
+  if (user && isOwnerRoute) {
+    const { data: ownProfiles } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("owner_id", user.id)
+      .limit(1);
+
+    if ((ownProfiles ?? []).length === 0 && user.email) {
+      const { data: ownInvitations } = await supabase
+        .from("invitations")
+        .select("id")
+        .eq("visitor_email", user.email.trim().toLowerCase())
+        .limit(1);
+
+      if ((ownInvitations ?? []).length > 0) {
+        const urlToRedirect = request.nextUrl.clone();
+        urlToRedirect.pathname = "/no-access";
+        urlToRedirect.searchParams.set("reason", "访客账号不能访问资料主人工作台。");
+        return NextResponse.redirect(urlToRedirect);
+      }
+    }
   }
 
   if (user && request.nextUrl.pathname === "/login") {
     const urlToRedirect = request.nextUrl.clone();
-    urlToRedirect.pathname = "/dashboard";
-    urlToRedirect.search = "";
+    const redirectTo = request.nextUrl.searchParams.get("redirect");
+    if (redirectTo?.startsWith("/")) {
+      const [pathname, search = ""] = redirectTo.split("?");
+      urlToRedirect.pathname = pathname;
+      urlToRedirect.search = search ? `?${search}` : "";
+    } else {
+      urlToRedirect.pathname = "/dashboard";
+      urlToRedirect.search = "";
+    }
     return NextResponse.redirect(urlToRedirect);
   }
 

@@ -1,6 +1,12 @@
 import Link from "next/link";
 
-export default function NoAccessPage() {
+export default async function NoAccessPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ reason?: string }>;
+}) {
+  const { reason } = await searchParams;
+
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#eef3fb] px-5">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_12%,rgba(59,130,246,0.2),transparent_30%),radial-gradient(circle_at_80%_18%,rgba(124,58,237,0.16),transparent_32%),linear-gradient(135deg,#f8fbff_0%,#edf4ff_52%,#e9ecff_100%)]" />
@@ -12,7 +18,10 @@ export default function NoAccessPage() {
           你没有访问此 AI 主页的权限
         </h1>
         <p className="mt-4 text-sm leading-6 text-slate-600">
-          该页面为受控访问页面。请确认你已使用被邀请的账号登录，或联系资料主人重新发送邀请。
+          {reason
+            ? decodeURIComponent(reason)
+            : "你没有访问权限或邀请已失效。"}
+          请确认你已使用被邀请的账号登录，或联系资料主人重新发送邀请。
         </p>
         <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
           <Link

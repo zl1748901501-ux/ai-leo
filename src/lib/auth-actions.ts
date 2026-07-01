@@ -12,16 +12,38 @@ export async function signInAction(formData: FormData) {
 
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
+  const redirectTo = String(formData.get("redirect") ?? "/dashboard");
   const supabase = await createClient();
 
   await supabase.auth.signOut({ scope: "local" });
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    redirect(`/login?error=${encodeURIComponent(error.message)}`);
+    const shouldTrySignUp = error.message === "Invalid login credentials";
+
+    if (!shouldTrySignUp) {
+      redirect(`/login?error=${encodeURIComponent(error.message)}&redirect=${encodeURIComponent(redirectTo)}`);
+    }
+
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (signUpError) {
+      redirect(`/login?error=${encodeURIComponent(signUpError.message)}&redirect=${encodeURIComponent(redirectTo)}`);
+    }
+
+    if (!signUpData.session) {
+      redirect(
+        `/login?message=${encodeURIComponent("账号已自动创建。当前 Supabase 开启了邮箱确认，请先确认邮箱后再登录。")}&redirect=${encodeURIComponent(redirectTo)}`,
+      );
+    }
+
+    redirect(redirectTo.startsWith("/") ? redirectTo : "/dashboard");
   }
 
-  redirect("/dashboard");
+  redirect(redirectTo.startsWith("/") ? redirectTo : "/dashboard");
 }
 
 export async function signUpAction(formData: FormData) {
@@ -31,6 +53,7 @@ export async function signUpAction(formData: FormData) {
 
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   const password = String(formData.get("password") ?? "");
+  const redirectTo = String(formData.get("redirect") ?? "/dashboard");
   const supabase = await createClient();
 
   const { data, error } = await supabase.auth.signUp({ email, password });
@@ -40,10 +63,12 @@ export async function signUpAction(formData: FormData) {
   }
 
   if (!data.session) {
-    redirect("/login?message=注册成功，请先在邮箱中确认账号后再登录。");
+    redirect(
+      `/login?message=${encodeURIComponent("注册成功，请先在邮箱中确认账号后再登录。")}&redirect=${encodeURIComponent(redirectTo)}`,
+    );
   }
 
-  redirect("/dashboard");
+  redirect(redirectTo.startsWith("/") ? redirectTo : "/dashboard");
 }
 
 export async function signOutAction() {

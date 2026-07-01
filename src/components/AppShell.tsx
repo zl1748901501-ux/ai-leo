@@ -8,7 +8,7 @@ import { signOutAction } from "@/lib/auth-actions";
 const nav = [
   { href: "/dashboard", label: "Workspace" },
   { href: "/upload", label: "上传中心" },
-  { href: "/assets/1", label: "资产详情" },
+  { href: "/assets", label: "资产库" },
   { href: "/profile-generator", label: "AI 主页" },
   { href: "/share", label: "访问权限" },
   { href: "/visitor/isabella", label: "访客预览" },

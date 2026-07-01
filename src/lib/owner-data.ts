@@ -4,6 +4,8 @@ import { ensureSeedData } from "./seed";
 import { isSupabaseConfigured } from "./supabase/env";
 import { createClient } from "./supabase/server";
 
+const storageBucket = process.env.NEXT_PUBLIC_SUPABASE_ASSETS_BUCKET || "assets";
+
 function throwSupabaseError(context: string, error: { message?: string; code?: string; details?: string } | null) {
   if (!error) return;
   const details = [error.message, error.code, error.details].filter(Boolean).join(" · ");
@@ -59,12 +61,12 @@ export async function getOwnerAssets(): Promise<{ assets: AssetRecord[]; userEma
 
 export async function getOwnerAssetById(
   id: string,
-): Promise<{ asset: AssetRecord | null; userEmail: string | null }> {
+): Promise<{ asset: AssetRecord | null; userEmail: string | null; previewUrl: string | null }> {
   const { supabase, user } = await getCurrentUser();
   const { assets } = await ensureSeedData(supabase, user.id);
 
   if (id === "1") {
-    return { asset: assets[0] ?? null, userEmail: user.email ?? null };
+    return { asset: assets[0] ?? null, userEmail: user.email ?? null, previewUrl: null };
   }
 
   const { data, error } = await supabase
@@ -76,10 +78,18 @@ export async function getOwnerAssetById(
 
   throwSupabaseError("读取资产详情失败", error);
 
-  return {
-    asset: (data as AssetRecord | null) ?? null,
-    userEmail: user.email ?? null,
-  };
+  const asset = (data as AssetRecord | null) ?? null;
+  let previewUrl: string | null = null;
+
+  if (asset?.file_url) {
+    const { data: signed } = await supabase.storage
+      .from(storageBucket)
+      .createSignedUrl(asset.file_url, 60 * 60);
+
+    previewUrl = signed?.signedUrl ?? null;
+  }
+
+  return { asset, userEmail: user.email ?? null, previewUrl };
 }
 
 export async function getOwnerProfileData(): Promise<{

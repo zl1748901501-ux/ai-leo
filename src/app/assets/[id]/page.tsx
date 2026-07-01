@@ -10,6 +10,108 @@ import { getOwnerAssetById } from "@/lib/owner-data";
 
 export const dynamic = "force-dynamic";
 
+function isImage(type: string) {
+  return ["png", "jpg", "jpeg", "webp", "gif", "svg"].includes(type.toLowerCase());
+}
+
+function isVideo(type: string) {
+  return ["mp4", "mov", "webm"].includes(type.toLowerCase());
+}
+
+function isInlineDocument(type: string) {
+  return ["pdf", "txt", "md", "markdown"].includes(type.toLowerCase());
+}
+
+function AssetPreview({
+  fileName,
+  fileType,
+  assetType,
+  previewUrl,
+  fileUrl,
+  createdAt,
+}: {
+  fileName: string;
+  fileType: string;
+  assetType: string | null;
+  previewUrl: string | null;
+  fileUrl: string | null;
+  createdAt: string;
+}) {
+  const normalizedType = fileType.toLowerCase();
+
+  return (
+    <Card className="order-2 min-h-[520px] min-w-0 overflow-hidden bg-gradient-to-br from-white/82 via-blue-50/70 to-violet-50/70 p-0 lg:order-1">
+      <div className="flex items-center justify-between border-b border-white/70 bg-white/56 px-5 py-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <AssetIcon type={assetType ?? fileType} />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-950">{fileName}</p>
+            <p className="mt-1 text-xs text-slate-500">
+              {fileType} · {new Date(createdAt).toLocaleDateString("zh-CN")}
+            </p>
+          </div>
+        </div>
+        {previewUrl ? (
+          <a
+            href={previewUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="shrink-0 rounded-xl border border-slate-200/80 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-white"
+          >
+            打开文件
+          </a>
+        ) : null}
+      </div>
+
+      <div className="flex min-h-[460px] items-center justify-center p-5">
+        {!previewUrl ? (
+          <div className="max-w-md text-center">
+            <div className="mx-auto mb-5 flex h-24 w-24 items-center justify-center rounded-[28px] border border-white bg-white/80 shadow-lg shadow-slate-900/8">
+              <AssetIcon type={assetType ?? fileType} />
+            </div>
+            <h2 className="text-2xl font-semibold text-slate-950">{fileName}</h2>
+            <p className="mx-auto mt-4 max-w-md break-all rounded-2xl bg-white/70 p-3 text-xs leading-5 text-slate-500">
+              Storage path: {fileUrl ?? "未保存文件路径"}
+            </p>
+          </div>
+        ) : isImage(normalizedType) ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={previewUrl}
+            alt={fileName}
+            className="max-h-[680px] w-full max-w-full rounded-3xl object-contain shadow-2xl shadow-slate-900/12"
+          />
+        ) : isVideo(normalizedType) ? (
+          <video
+            src={previewUrl}
+            controls
+            className="max-h-[680px] w-full rounded-3xl bg-slate-950 shadow-2xl shadow-slate-900/12"
+          />
+        ) : isInlineDocument(normalizedType) ? (
+          <iframe
+            src={previewUrl}
+            title={fileName}
+            className="h-[680px] w-full rounded-3xl border border-slate-200/80 bg-white shadow-2xl shadow-slate-900/10"
+          />
+        ) : (
+          <div className="max-w-lg text-center">
+            <div className="mx-auto mb-5 flex h-24 w-24 items-center justify-center rounded-[28px] border border-white bg-white/80 shadow-lg shadow-slate-900/8">
+              <AssetIcon type={assetType ?? fileType} />
+            </div>
+            <h2 className="text-2xl font-semibold text-slate-950">{fileName}</h2>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              当前浏览器不能直接内嵌预览这种文档格式。你仍然可以在右侧查看 AI 解析结果，或点击右上角“打开文件”查看原文件。
+            </p>
+            <p className="mx-auto mt-4 max-w-md break-all rounded-2xl bg-white/70 p-3 text-xs leading-5 text-slate-500">
+              Storage path: {fileUrl ?? "未保存文件路径"}
+            </p>
+          </div>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 export default async function AssetDetailPage({
   params,
   searchParams,
@@ -19,15 +121,23 @@ export default async function AssetDetailPage({
 }) {
   const { id } = await params;
   const pageParams = await searchParams;
-  const { asset, userEmail } = await getOwnerAssetById(id);
+  const { asset, userEmail, previewUrl } = await getOwnerAssetById(id);
   if (!asset) notFound();
 
   return (
     <AppShell userEmail={userEmail}>
+      <Link
+        href="/assets"
+        className="mb-4 inline-flex items-center gap-2 rounded-xl border border-white/70 bg-white/78 px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm backdrop-blur-xl transition hover:bg-white"
+      >
+        <span aria-hidden>←</span>
+        返回资产库
+      </Link>
+
       <PageHeader
         eyebrow="Asset Detail"
         title={asset.ai_title ?? asset.file_name}
-        description="查看真实上传文件的 mock AI 理解结果，并保存它在访客 AI 主页中的可见性。"
+        description="查看已上传文件内容、AI 理解结果，并设置它在访客 AI 主页中的可见范围。"
         action={
           <Link
             href="/dashboard"
@@ -57,20 +167,14 @@ export default async function AssetDetailPage({
       ) : null}
 
       <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,460px)]">
-        <Card className="order-2 flex min-h-[340px] min-w-0 items-center justify-center overflow-hidden bg-gradient-to-br from-white/80 via-blue-50/70 to-violet-50/70 lg:order-1 lg:min-h-[520px]">
-          <div className="text-center">
-            <div className="mx-auto mb-5 flex h-24 w-24 items-center justify-center rounded-[28px] border border-white bg-white/80 shadow-lg shadow-slate-900/8">
-              <AssetIcon type={asset.asset_type ?? asset.file_type} />
-            </div>
-            <h2 className="text-2xl font-semibold text-slate-950">{asset.file_name}</h2>
-            <p className="mt-2 text-sm text-slate-500">
-              {asset.file_type} · {new Date(asset.created_at).toLocaleDateString("zh-CN")}
-            </p>
-            <p className="mx-auto mt-4 max-w-md break-all rounded-2xl bg-white/70 p-3 text-xs leading-5 text-slate-500">
-              Storage path: {asset.file_url ?? "未保存文件路径"}
-            </p>
-          </div>
-        </Card>
+        <AssetPreview
+          fileName={asset.file_name}
+          fileType={asset.file_type}
+          assetType={asset.asset_type}
+          previewUrl={previewUrl}
+          fileUrl={asset.file_url}
+          createdAt={asset.created_at}
+        />
 
         <div className="order-1 min-w-0 space-y-6 lg:order-2">
           <Card>

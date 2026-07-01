@@ -139,10 +139,51 @@ export async function uploadAssetAction(formData: FormData) {
   redirect(`/assets/${data.id}`);
 }
 
+export async function createUploadedAssetRecordAction(input: {
+  fileName: string;
+  storagePath: string;
+  contentType?: string;
+}) {
+  const { supabase, user } = await getCurrentUser();
+  const originalName = input.fileName;
+  const storagePath = input.storagePath;
+
+  if (!originalName || !storagePath || !storagePath.startsWith(`${user.id}/`)) {
+    throw new Error("上传记录无效，请重新上传。");
+  }
+
+  const mock = buildMockAnalysis(originalName);
+  const { data, error: insertError } = await supabase
+    .from("assets")
+    .insert({
+      owner_id: user.id,
+      file_name: originalName,
+      file_url: storagePath,
+      file_type: inferFileType(originalName),
+      raw_text: null,
+      ...mock,
+      visibility: "private",
+      analysis_status: "completed",
+    })
+    .select("id")
+    .single();
+
+  if (insertError) {
+    await supabase.storage.from(storageBucket).remove([storagePath]);
+    throw new Error(insertError.message);
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/upload");
+  revalidatePath(`/assets/${data.id}`);
+
+  return { id: data.id as string };
+}
+
 export async function updateAssetVisibilityAction(formData: FormData) {
   const assetId = String(formData.get("assetId") ?? "");
   const visibility = String(formData.get("visibility") ?? "private");
-  const allowed = ["private", "answer_only", "display"];
+  const allowed = ["private", "answer_only", "show"];
 
   if (!assetId || !allowed.includes(visibility)) {
     redirect("/dashboard");
@@ -166,4 +207,90 @@ export async function updateAssetVisibilityAction(formData: FormData) {
   revalidatePath("/profile-generator");
   revalidatePath(`/assets/${assetId}`);
   redirect(`/assets/${assetId}?saved=1`);
+}
+
+export async function deleteAssetAction(formData: FormData) {
+  const assetId = String(formData.get("assetId") ?? "");
+
+  if (!assetId) {
+    redirect("/assets?error=没有找到要删除的资产。");
+  }
+
+  const { supabase, user } = await getCurrentUser();
+  const { data: asset, error: readError } = await supabase
+    .from("assets")
+    .select("id,file_url")
+    .eq("id", assetId)
+    .eq("owner_id", user.id)
+    .maybeSingle();
+
+  if (readError || !asset) {
+    redirect(`/assets?error=${encodeURIComponent(readError?.message || "没有找到要删除的资产。")}`);
+  }
+
+  if (asset.file_url) {
+    await supabase.storage.from(storageBucket).remove([asset.file_url]);
+  }
+
+  const { error } = await supabase
+    .from("assets")
+    .delete()
+    .eq("id", assetId)
+    .eq("owner_id", user.id);
+
+  if (error) {
+    redirect(`/assets?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath("/assets");
+  revalidatePath("/dashboard");
+  revalidatePath("/upload");
+  revalidatePath("/profile-generator");
+  redirect("/assets?deleted=1");
+}
+
+export async function deleteAssetsAction(formData: FormData) {
+  const assetIds = formData
+    .getAll("assetIds")
+    .map((value) => String(value))
+    .filter(Boolean);
+
+  if (assetIds.length === 0) {
+    redirect("/assets?error=请选择要删除的资产。");
+  }
+
+  const { supabase, user } = await getCurrentUser();
+  const { data: assets, error: readError } = await supabase
+    .from("assets")
+    .select("id,file_url")
+    .eq("owner_id", user.id)
+    .in("id", assetIds);
+
+  if (readError) {
+    redirect(`/assets?error=${encodeURIComponent(readError.message)}`);
+  }
+
+  const filePaths = (assets ?? [])
+    .map((asset) => asset.file_url)
+    .filter((path): path is string => typeof path === "string" && path.length > 0);
+
+  if (filePaths.length > 0) {
+    await supabase.storage.from(storageBucket).remove(filePaths);
+  }
+
+  const { error } = await supabase
+    .from("assets")
+    .delete()
+    .eq("owner_id", user.id)
+    .in("id", assetIds);
+
+  if (error) {
+    redirect(`/assets?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath("/assets");
+  revalidatePath("/dashboard");
+  revalidatePath("/upload");
+  revalidatePath("/profile-generator");
+  redirect(`/assets?deleted=${assetIds.length}`);
 }

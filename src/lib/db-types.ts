@@ -30,8 +30,8 @@ export type AssetRecord = {
   project_keywords: string[];
   answerable_questions: string[];
   card: Record<string, unknown> | null;
-  source_quotes: string[];
-  visibility: "private" | "answer_only" | "display" | string;
+  source_quotes: unknown[];
+  visibility: "private" | "answer_only" | "show" | string;
   analysis_status: "waiting" | "processing" | "done" | "completed" | string;
   created_at: string;
   updated_at: string;
@@ -43,10 +43,12 @@ export type InvitationRecord = {
   owner_id: string;
   visitor_email: string;
   invite_token: string;
-  status: "pending" | "accepted" | "revoked" | string;
+  token: string | null;
+  status: "pending" | "accepted" | "revoked" | "active" | "expired" | string;
   note: string | null;
   expires_at: string | null;
   created_at: string;
+  updated_at: string | null;
   used_at: string | null;
   last_access_at: string | null;
 };
@@ -61,7 +63,7 @@ export function visibilityLabel(visibility: string) {
   const labels: Record<string, string> = {
     private: "私密",
     answer_only: "仅回答",
-    display: "可展示",
+    show: "可展示",
   };
   return labels[visibility] ?? visibility;
 }
@@ -80,6 +82,8 @@ export function analysisStatusLabel(status: string) {
 
 export function invitationStatusLabel(status: string) {
   const labels: Record<string, string> = {
+    active: "有效",
+    expired: "已过期",
     pending: "待接受",
     accepted: "已接受",
     revoked: "已撤销",
