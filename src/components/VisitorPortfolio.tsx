@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import {
   askVisitorQuestionAction,
   type VisitorChatCard,
@@ -26,6 +26,7 @@ export type VisitorRelatedAsset = {
   tags: string[];
   visibility: "answer_only" | "show";
   previewUrl: string | null;
+  rawText?: string;
 };
 
 type ChatMessage = {
@@ -69,8 +70,34 @@ function fileTypeLabel(type: string) {
   return type || "文件";
 }
 
-function AssetOpenButtons({ asset }: { asset: VisitorRelatedAsset }) {
-  if (!asset.previewUrl) {
+function isImageType(type: string) {
+  return ["png", "jpg", "jpeg", "webp", "gif"].includes(type.toLowerCase());
+}
+
+function isVideoType(type: string) {
+  return ["mp4", "mov", "webm"].includes(type.toLowerCase());
+}
+
+function isPdfType(type: string) {
+  return type.toLowerCase() === "pdf";
+}
+
+function isDocxType(type: string, fileName: string) {
+  return type.toLowerCase() === "docx" || fileName.toLowerCase().endsWith(".docx");
+}
+
+function previewText(asset: VisitorRelatedAsset) {
+  return (asset.rawText || asset.summary || "").trim();
+}
+
+function AssetOpenButtons({
+  asset,
+  onOpen,
+}: {
+  asset: VisitorRelatedAsset;
+  onOpen: (asset: VisitorRelatedAsset) => void;
+}) {
+  if (!asset.previewUrl && !previewText(asset)) {
     return (
       <span className="flex-1 rounded-2xl bg-white/[0.06] px-3 py-2 text-center text-xs text-slate-300/60 ring-1 ring-white/8">
         暂无预览
@@ -80,15 +107,14 @@ function AssetOpenButtons({ asset }: { asset: VisitorRelatedAsset }) {
 
   return (
     <>
-      <a
-        href={asset.previewUrl}
-        target="_blank"
-        rel="noreferrer"
+      <button
+        type="button"
+        onClick={() => onOpen(asset)}
         className="flex-1 rounded-2xl bg-cyan-200/15 px-3 py-2 text-center text-xs font-semibold text-cyan-100 ring-1 ring-cyan-200/18 transition hover:bg-cyan-200/22"
       >
         打开查看
-      </a>
-      {asset.visibility === "show" ? (
+      </button>
+      {asset.visibility === "show" && asset.previewUrl ? (
         <a
           href={asset.previewUrl}
           target="_blank"
@@ -100,6 +126,84 @@ function AssetOpenButtons({ asset }: { asset: VisitorRelatedAsset }) {
         </a>
       ) : null}
     </>
+  );
+}
+
+function AssetPreviewModal({
+  asset,
+  token,
+  onClose,
+}: {
+  asset: VisitorRelatedAsset;
+  token?: string;
+  onClose: () => void;
+}) {
+  const type = asset.fileType.toLowerCase();
+  const text = previewText(asset);
+  const previewPath = `/api/asset-preview/${asset.id}${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-5 backdrop-blur-xl">
+      <section className="flex max-h-[88vh] w-full max-w-5xl flex-col overflow-hidden rounded-[28px] border border-white/16 bg-[#172844]/95 text-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-white/10 px-5 py-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-100/75">
+              Web Preview
+            </p>
+            <h3 className="mt-1 text-xl font-semibold">{asset.title}</h3>
+            <p className="mt-1 text-xs text-slate-300">
+              {fileTypeLabel(asset.fileType)} · {asset.fileName}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full bg-white/10 px-4 py-2 text-sm font-semibold text-slate-100 ring-1 ring-white/12 transition hover:bg-white/16"
+          >
+            关闭
+          </button>
+        </div>
+
+        <div className="subtle-scrollbar min-h-0 flex-1 overflow-auto p-5">
+          {asset.previewUrl && isImageType(type) ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={asset.previewUrl}
+              alt={asset.title}
+              className="mx-auto max-h-[68vh] max-w-full rounded-2xl object-contain"
+            />
+          ) : asset.previewUrl && isVideoType(type) ? (
+            <video
+              src={asset.previewUrl}
+              controls
+              className="mx-auto max-h-[68vh] w-full rounded-2xl bg-black"
+            />
+          ) : asset.previewUrl && isPdfType(type) ? (
+            <iframe
+              src={asset.previewUrl}
+              title={asset.title}
+              className="h-[68vh] w-full rounded-2xl border border-white/10 bg-white"
+            />
+          ) : isDocxType(type, asset.fileName) ? (
+            <iframe
+              src={previewPath}
+              title={asset.title}
+              className="h-[68vh] w-full rounded-2xl border border-white/10 bg-white"
+            />
+          ) : (
+            <div className="rounded-2xl bg-white/[0.08] p-5 text-sm leading-8 text-slate-100/86 ring-1 ring-white/10">
+              <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-100/78">
+                文档网页预览
+              </p>
+              <p className="whitespace-pre-wrap">
+                {text ||
+                  "这份资料暂时没有可在网页中展示的正文。你可以在资产详情页重新解析，或上传 PDF / 图片 / 视频获得更完整预览。"}
+              </p>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -144,8 +248,19 @@ export function VisitorPortfolio({
   const [input, setInput] = useState("");
   const [panelOpen, setPanelOpen] = useState(true);
   const [openAssetId, setOpenAssetId] = useState<string | null>(null);
+  const [previewAsset, setPreviewAsset] = useState<VisitorRelatedAsset | null>(null);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(initialMessages);
   const [isPending, startTransition] = useTransition();
+  const chatScrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const target = chatScrollRef.current;
+    if (!target) return;
+
+    window.requestAnimationFrame(() => {
+      target.scrollTo({ top: target.scrollHeight, behavior: "smooth" });
+    });
+  }, [chatMessages.length, isPending]);
 
   function ask(questionValue = input) {
     const question = questionValue.trim();
@@ -219,8 +334,8 @@ export function VisitorPortfolio({
           panelOpen ? "grid-cols-[minmax(0,1fr)_430px]" : "grid-cols-[minmax(0,1fr)_58px]"
         }`}
       >
-        <section className={`panel-rise flex min-h-0 flex-col rounded-[32px] p-5 ${glassPanel}`}>
-          <div className="mb-5 flex shrink-0 items-start justify-between gap-6">
+        <section className={`panel-rise flex min-h-0 flex-col rounded-[32px] p-4 ${glassPanel}`}>
+          <div className="hidden">
             <div className="max-w-3xl">
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-100/86">
                 AI Conversation
@@ -241,7 +356,7 @@ export function VisitorPortfolio({
           </div>
 
           <section className="flex min-h-0 flex-1 flex-col rounded-[28px] bg-[#1b2d49]/68 p-5 ring-1 ring-white/12 backdrop-blur-2xl">
-            <div className="subtle-scrollbar min-h-0 flex-1 overflow-y-auto pr-2">
+            <div ref={chatScrollRef} className="subtle-scrollbar min-h-0 flex-1 overflow-y-auto pr-2">
               <div className="space-y-5">
                 {chatMessages.map((message, index) =>
                   message.role === "user" ? (
@@ -323,7 +438,7 @@ export function VisitorPortfolio({
                                 </p>
                                 {asset ? (
                                   <div className="mt-3 flex gap-2">
-                                    <AssetOpenButtons asset={asset} />
+                                    <AssetOpenButtons asset={asset} onOpen={setPreviewAsset} />
                                   </div>
                                 ) : null}
                               </div>
@@ -515,7 +630,7 @@ export function VisitorPortfolio({
                             >
                               {openAssetId === asset.id ? "收起解析" : "查看详情"}
                             </button>
-                            <AssetOpenButtons asset={asset} />
+                            <AssetOpenButtons asset={asset} onOpen={setPreviewAsset} />
                           </div>
                         </article>
                       ))
@@ -541,6 +656,9 @@ export function VisitorPortfolio({
           )}
         </aside>
       </div>
+      {previewAsset ? (
+        <AssetPreviewModal asset={previewAsset} token={token} onClose={() => setPreviewAsset(null)} />
+      ) : null}
     </main>
   );
 }

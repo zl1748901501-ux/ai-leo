@@ -70,6 +70,7 @@ async function toRelatedAssets(
         tags: normalizeStringArray(asset.tags, 5),
         visibility: asset.visibility === "show" ? "show" : "answer_only",
         previewUrl,
+        rawText: asset.raw_text ? asset.raw_text.slice(0, 8000) : undefined,
       };
     }),
   );
