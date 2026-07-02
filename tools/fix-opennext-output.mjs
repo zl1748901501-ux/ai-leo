@@ -15,7 +15,10 @@ if (!fs.existsSync(indexFile)) {
   throw new Error("[cloudflare] Missing .open-next/server-functions/default/index.mjs.");
 }
 
-fs.writeFileSync(handlerFile, 'export { handler } from "./index.mjs";\n');
+if (!fs.existsSync(handlerFile)) {
+  fs.writeFileSync(handlerFile, 'export { handler } from "./index.mjs";\n');
+  console.log("[cloudflare] Added missing server function handler bridge.");
+}
 
 const linkedPaths = [];
 const walk = (dir) => {
