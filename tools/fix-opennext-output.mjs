@@ -20,6 +20,52 @@ if (!fs.existsSync(handlerFile)) {
   console.log("[cloudflare] Added missing server function handler bridge.");
 }
 
+const patchEsmRequire = (filePath) => {
+  let source = fs.readFileSync(filePath, "utf8");
+  if (!/(?<![\w$])require(?![\w$])/.test(source)) {
+    return false;
+  }
+
+  const createRequireImport =
+    'import { createRequire as __cloudflareCreateRequire } from "node:module";\n' +
+    "const __cloudflareRequire = __cloudflareCreateRequire(import.meta.url);\n";
+
+  if (!source.includes("__cloudflareCreateRequire")) {
+    const importMatch = source.match(/^(?:import[^\n]*\n)+/);
+    const insertAt = importMatch ? importMatch[0].length : 0;
+    source =
+      source.slice(0, insertAt) +
+      createRequireImport +
+      source.slice(insertAt);
+  }
+
+  source = source
+    .replace(/(?<![\w$])require\s*\(/g, "__cloudflareRequire(")
+    .replace(/typeof require\b/g, "typeof __cloudflareRequire")
+    .replace(/(?<![\w$])require\.apply\b/g, "__cloudflareRequire.apply")
+    .replace(/(?<![\w$])require(?![\w$])/g, "__cloudflareRequire");
+
+  fs.writeFileSync(filePath, source);
+  return true;
+};
+
+const patchedEsmFiles = [];
+for (const entry of fs.readdirSync(defaultFunctionDir, { withFileTypes: true })) {
+  if (!entry.isFile() || !entry.name.endsWith(".mjs")) {
+    continue;
+  }
+  const filePath = path.join(defaultFunctionDir, entry.name);
+  if (patchEsmRequire(filePath)) {
+    patchedEsmFiles.push(path.relative(root, filePath));
+  }
+}
+
+if (patchedEsmFiles.length > 0) {
+  console.log(
+    `[cloudflare] Patched ESM server output to avoid global require:\n${patchedEsmFiles.join("\n")}`,
+  );
+}
+
 const linkedPaths = [];
 const walk = (dir) => {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
