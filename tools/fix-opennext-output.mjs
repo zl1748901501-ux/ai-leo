@@ -22,28 +22,60 @@ if (!fs.existsSync(handlerFile)) {
 
 const patchEsmRequire = (filePath) => {
   let source = fs.readFileSync(filePath, "utf8");
-  if (!/(?<![\w$])require(?![\w$])/.test(source)) {
+  const needsRequirePatch = /(?<![\w$])require(?![\w$])/.test(source);
+  const needsDirnamePatch = /\b(__dirname|__filename|process\.cwd|process\.chdir)\b/.test(
+    source,
+  );
+
+  if (!needsRequirePatch && !needsDirnamePatch) {
     return false;
   }
 
-  const createRequireImport =
-    'import { createRequire as __cloudflareCreateRequire } from "node:module";\n' +
-    "const __cloudflareRequire = __cloudflareCreateRequire(import.meta.url);\n";
-
-  if (!source.includes("__cloudflareCreateRequire")) {
-    const importMatch = source.match(/^(?:import[^\n]*\n)+/);
-    const insertAt = importMatch ? importMatch[0].length : 0;
-    source =
-      source.slice(0, insertAt) +
-      createRequireImport +
-      source.slice(insertAt);
+  let shim = "";
+  if (needsRequirePatch && !source.includes("__cloudflareCreateRequire")) {
+    shim +=
+      'import { createRequire as __cloudflareCreateRequire } from "node:module";\n' +
+      "const __cloudflareRequire = __cloudflareCreateRequire('file:///worker.js');\n" +
+      "const __cloudflareUrlModule = __cloudflareRequire('node:url');\n" +
+      "const __cloudflareOriginalFileURLToPath = __cloudflareUrlModule.fileURLToPath;\n" +
+      "const __cloudflareOriginalPathToFileURL = __cloudflareUrlModule.pathToFileURL;\n" +
+      "__cloudflareUrlModule.fileURLToPath = (value, ...args) => __cloudflareOriginalFileURLToPath(value || 'file:///worker.js', ...args);\n" +
+      "__cloudflareUrlModule.pathToFileURL = (value, ...args) => __cloudflareOriginalPathToFileURL(value || '/', ...args);\n";
   }
 
-  source = source
-    .replace(/(?<![\w$])require\s*\(/g, "__cloudflareRequire(")
-    .replace(/typeof require\b/g, "typeof __cloudflareRequire")
-    .replace(/(?<![\w$])require\.apply\b/g, "__cloudflareRequire.apply")
-    .replace(/(?<![\w$])require(?![\w$])/g, "__cloudflareRequire");
+  if (needsDirnamePatch && !source.includes("__cloudflareDirname")) {
+    shim +=
+      'const __cloudflareDirname = "/";\n' +
+      'const __cloudflareFilename = "/worker.js";\n' +
+      "var __dirname = globalThis.__dirname || __cloudflareDirname;\n" +
+      "var __filename = globalThis.__filename || __cloudflareFilename;\n" +
+      "globalThis.__dirname = __dirname;\n" +
+      "globalThis.__filename = __filename;\n" +
+      "if (typeof process !== \"undefined\") {\n" +
+      "  process.cwd = () => __cloudflareDirname;\n" +
+      "  process.chdir = () => undefined;\n" +
+      "}\n";
+  }
+
+  if (shim) {
+    const importMatch = source.match(/^(?:import[^\n]*\n)+/);
+    const insertAt = importMatch ? importMatch[0].length : 0;
+    source = source.slice(0, insertAt) + shim + source.slice(insertAt);
+  }
+
+  if (needsRequirePatch) {
+    source = source
+      .replace(/(?<![\w$])require\s*\(/g, "__cloudflareRequire(")
+      .replace(/typeof require\b/g, "typeof __cloudflareRequire")
+      .replace(/(?<![\w$])require\.apply\b/g, "__cloudflareRequire.apply")
+      .replace(/(?<![\w$])require(?![\w$])/g, "__cloudflareRequire");
+  }
+
+  if (needsDirnamePatch) {
+    source = source
+      .replace(/globalThis\.__dirname\s*\?\?=\s*"";/g, "globalThis.__dirname ||= __cloudflareDirname;")
+      .replace(/globalThis\.__filename\s*\?\?=\s*"";/g, "globalThis.__filename ||= __cloudflareFilename;");
+  }
 
   fs.writeFileSync(filePath, source);
   return true;
@@ -58,6 +90,20 @@ for (const entry of fs.readdirSync(defaultFunctionDir, { withFileTypes: true }))
   if (patchEsmRequire(filePath)) {
     patchedEsmFiles.push(path.relative(root, filePath));
   }
+}
+
+const middlewareHandlerFile = path.join(openNextDir, "middleware", "handler.mjs");
+if (fs.existsSync(middlewareHandlerFile) && patchEsmRequire(middlewareHandlerFile)) {
+  patchedEsmFiles.push(path.relative(root, middlewareHandlerFile));
+}
+
+const cloudflareInitFile = path.join(openNextDir, "cloudflare", "init.js");
+if (fs.existsSync(cloudflareInitFile)) {
+  let initSource = fs.readFileSync(cloudflareInitFile, "utf8");
+  initSource = initSource
+    .replace(/globalThis\.__dirname\s*\?\?=\s*"";/g, 'globalThis.__dirname ??= "/";')
+    .replace(/globalThis\.__filename\s*\?\?=\s*"";/g, 'globalThis.__filename ??= "/worker.js";');
+  fs.writeFileSync(cloudflareInitFile, initSource);
 }
 
 if (patchedEsmFiles.length > 0) {
