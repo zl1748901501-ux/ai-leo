@@ -10,6 +10,7 @@
       "type": "ESModule",
       "globs": [
         "cloudflare/*.js",
+        "cloudflare/*.mjs",
         "middleware/*.mjs",
         "server-functions/default/*.mjs",
         ".build/durable-objects/*.js"
