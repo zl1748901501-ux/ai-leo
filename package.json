@@ -7,9 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "cf:build": "opennextjs-cloudflare build",
-    "cf:preview": "opennextjs-cloudflare preview",
-    "cf:deploy": "opennextjs-cloudflare deploy"
+    "cf:clean": "node -e \"require('fs').rmSync('.open-next',{recursive:true,force:true})\"",
+    "cf:build": "node tools/prepare-opennext-runtime-deps.mjs && node tools/build-next-for-cloudflare.mjs && node tools/patch-opennext-symlinks.mjs && node -e \"require('fs').rmSync('.open-next',{recursive:true,force:true})\" && opennextjs-cloudflare build --skipNextBuild && node tools/fix-opennext-output.mjs",
+    "cf:preview": "pnpm cf:build && opennextjs-cloudflare preview",
+    "cf:deploy": "pnpm cf:build && opennextjs-cloudflare deploy"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",
