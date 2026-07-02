@@ -112,6 +112,70 @@ if (patchedEsmFiles.length > 0) {
   );
 }
 
+const copyFileIfChanged = (sourcePath, targetPath) => {
+  if (!fs.existsSync(sourcePath)) {
+    return false;
+  }
+
+  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+  const source = fs.readFileSync(sourcePath);
+  if (fs.existsSync(targetPath) && fs.readFileSync(targetPath).equals(source)) {
+    return false;
+  }
+
+  fs.writeFileSync(targetPath, source);
+  return true;
+};
+
+const requiredServerManifests = [
+  "app-paths-manifest.json",
+  "functions-config-manifest.json",
+  "interception-route-rewrite-manifest.js",
+  "middleware-build-manifest.js",
+  "middleware-manifest.json",
+  "middleware-react-loadable-manifest.js",
+  "next-font-manifest.js",
+  "next-font-manifest.json",
+  "pages-manifest.json",
+  "prefetch-hints.json",
+  "server-reference-manifest.js",
+  "server-reference-manifest.json",
+];
+
+const nextServerDir = path.join(root, ".next", "server");
+const outputNextServerDir = path.join(defaultFunctionDir, ".next", "server");
+const copiedManifests = [];
+for (const manifest of requiredServerManifests) {
+  const sourcePath = path.join(nextServerDir, manifest);
+  const targetPath = path.join(outputNextServerDir, manifest);
+  if (copyFileIfChanged(sourcePath, targetPath)) {
+    copiedManifests.push(path.relative(root, targetPath));
+  }
+}
+
+const requiredOutputManifests = [
+  "app-paths-manifest.json",
+  "middleware-build-manifest.js",
+  "middleware-manifest.json",
+  "server-reference-manifest.json",
+];
+
+const missingOutputManifests = requiredOutputManifests.filter(
+  (manifest) => !fs.existsSync(path.join(outputNextServerDir, manifest)),
+);
+
+if (missingOutputManifests.length > 0) {
+  throw new Error(
+    `[cloudflare] Missing required Next server manifests in OpenNext output:\n${missingOutputManifests.join("\n")}`,
+  );
+}
+
+if (copiedManifests.length > 0) {
+  console.log(
+    `[cloudflare] Copied missing Next server manifests:\n${copiedManifests.join("\n")}`,
+  );
+}
+
 const linkedPaths = [];
 const walk = (dir) => {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

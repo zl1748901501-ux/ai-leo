@@ -13,12 +13,19 @@
         "cloudflare/*.mjs",
         "middleware/*.mjs",
         "server-functions/default/*.mjs",
+        "server-functions/default/.next/server/*manifest.js",
         ".build/durable-objects/*.js"
       ]
     },
     {
       "type": "Text",
-      "globs": ["**/*.html", "**/*.txt", "**/*.sql"],
+      "globs": [
+        "**/*.html",
+        "**/*.txt",
+        "**/*.sql",
+        "server-functions/default/.next/BUILD_ID",
+        "server-functions/default/.next/**/*.json"
+      ],
       "fallthrough": false
     },
     {
