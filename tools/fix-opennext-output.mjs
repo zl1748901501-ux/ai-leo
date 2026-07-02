@@ -144,12 +144,19 @@ const requiredServerManifests = [
 
 const nextServerDir = path.join(root, ".next", "server");
 const outputNextServerDir = path.join(defaultFunctionDir, ".next", "server");
+const rootOutputNextServerDir = path.join(openNextDir, ".next", "server");
 const copiedManifests = [];
 for (const manifest of requiredServerManifests) {
   const sourcePath = path.join(nextServerDir, manifest);
-  const targetPath = path.join(outputNextServerDir, manifest);
-  if (copyFileIfChanged(sourcePath, targetPath)) {
-    copiedManifests.push(path.relative(root, targetPath));
+  const targetPaths = [
+    path.join(outputNextServerDir, manifest),
+    path.join(rootOutputNextServerDir, manifest),
+  ];
+
+  for (const targetPath of targetPaths) {
+    if (copyFileIfChanged(sourcePath, targetPath)) {
+      copiedManifests.push(path.relative(root, targetPath));
+    }
   }
 }
 
@@ -161,7 +168,9 @@ const requiredOutputManifests = [
 ];
 
 const missingOutputManifests = requiredOutputManifests.filter(
-  (manifest) => !fs.existsSync(path.join(outputNextServerDir, manifest)),
+  (manifest) =>
+    !fs.existsSync(path.join(outputNextServerDir, manifest)) ||
+    !fs.existsSync(path.join(rootOutputNextServerDir, manifest)),
 );
 
 if (missingOutputManifests.length > 0) {

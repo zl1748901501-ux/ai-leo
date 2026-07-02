@@ -14,6 +14,7 @@
         "middleware/*.mjs",
         "server-functions/default/*.mjs",
         "server-functions/default/.next/server/*manifest.js",
+        ".next/server/*manifest.js",
         ".build/durable-objects/*.js"
       ]
     },
@@ -23,6 +24,8 @@
         "**/*.html",
         "**/*.txt",
         "**/*.sql",
+        ".next/BUILD_ID",
+        ".next/**/*.json",
         "server-functions/default/.next/BUILD_ID",
         "server-functions/default/.next/**/*.json"
       ],
