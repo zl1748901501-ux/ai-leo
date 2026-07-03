@@ -3,6 +3,7 @@
   "name": "second-ai",
   "main": ".open-next/worker.js",
   "no_bundle": true,
+  "keep_vars": true,
   "find_additional_modules": true,
   "base_dir": ".open-next",
   "rules": [

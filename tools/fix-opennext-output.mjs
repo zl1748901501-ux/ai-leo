@@ -101,15 +101,108 @@ const cloudflareInitFile = path.join(openNextDir, "cloudflare", "init.js");
 if (fs.existsSync(cloudflareInitFile)) {
   let initSource = fs.readFileSync(cloudflareInitFile, "utf8");
   initSource = initSource
+    .replace(
+      "function populateProcessEnv(url, env) {\n  for (const [key, value] of Object.entries(env)) {",
+      "function populateProcessEnv(url, env) {\n  globalThis.process ??= process;\n  process.env ??= {};\n  const runtimeEnv = env ?? {};\n  for (const [key, value] of Object.entries(runtimeEnv)) {",
+    )
+    .replace(
+      "  const mode = env.NEXTJS_ENV ?? \"production\";",
+      "  const mode = runtimeEnv.NEXTJS_ENV ?? \"production\";",
+    )
     .replace(/globalThis\.__dirname\s*\?\?=\s*"";/g, 'globalThis.__dirname ??= "/";')
     .replace(/globalThis\.__filename\s*\?\?=\s*"";/g, 'globalThis.__filename ??= "/worker.js";');
   fs.writeFileSync(cloudflareInitFile, initSource);
+}
+
+const middlewareOutputFile = path.join(openNextDir, "middleware", "handler.mjs");
+if (fs.existsSync(middlewareOutputFile)) {
+  let middlewareSource = fs.readFileSync(middlewareOutputFile, "utf8");
+  middlewareSource = middlewareSource
+    .replace(
+      "globalThis.process = process;\n  for (const [key, value] of Object.entries(env)) {",
+      "globalThis.process = process;\n  process.env ??= {};\n  const runtimeEnv = env ?? {};\n  for (const [key, value] of Object.entries(runtimeEnv)) {",
+    )
+    .replace(
+      "const mode = env.NEXTJS_ENV ?? \"production\";",
+      "const mode = runtimeEnv.NEXTJS_ENV ?? \"production\";",
+    );
+  fs.writeFileSync(middlewareOutputFile, middlewareSource);
+}
+
+const workerFile = path.join(openNextDir, "worker.js");
+if (fs.existsSync(workerFile)) {
+  let workerSource = fs.readFileSync(workerFile, "utf8");
+  const fetchStart =
+    "    async fetch(request, env, ctx) {\n        return runWithCloudflareRequestContext(request, env, ctx, async () => {";
+  if (workerSource.includes(fetchStart) && !workerSource.includes("[second-ai-worker-error]")) {
+    workerSource = workerSource.replace(
+      fetchStart,
+      `    async fetch(request, env, ctx) {
+        try {
+            globalThis.process ??= { env: {} };
+            globalThis.process.env ??= {};
+            if (env && typeof env === "object") {
+                for (const [key, value] of Object.entries(env)) {
+                    if (typeof value === "string") {
+                        globalThis.process.env[key] = value;
+                    }
+                }
+            }
+            return await runWithCloudflareRequestContext(request, env ?? {}, ctx, async () => {`,
+    );
+
+    const fetchEnd = "        });\n    },\n};";
+    workerSource = workerSource.replace(
+      fetchEnd,
+      `        });
+        } catch (error) {
+            const normalizedError = error instanceof Error ? error : new Error(String(error));
+            console.error("[second-ai-worker-error]", {
+                name: normalizedError.name,
+                message: normalizedError.message,
+                stack: normalizedError.stack,
+                url: request.url,
+                hasProcess: typeof process !== "undefined",
+                hasProcessEnv: typeof process !== "undefined" && !!process.env,
+                envKeys: Object.keys(env ?? {}),
+                processEnvKeys: typeof process !== "undefined" ? Object.keys(process.env ?? {}) : [],
+            });
+            return new Response("Internal Server Error", { status: 500 });
+        }
+    },
+};`,
+    );
+    workerSource = workerSource
+      .replace("handleCdnCgiImageRequest(url, env)", "handleCdnCgiImageRequest(url, env ?? {})")
+      .replace("handleImageRequest(url, request.headers, env)", "handleImageRequest(url, request.headers, env ?? {})")
+      .replace("middlewareHandler(request, env, ctx)", "middlewareHandler(request, env ?? {}, ctx)")
+      .replace("handler(reqOrResp, env, ctx, request.signal)", "handler(reqOrResp, env ?? {}, ctx, request.signal)");
+    fs.writeFileSync(workerFile, workerSource);
+    console.log("[cloudflare] Added Worker entrypoint error diagnostics.");
+  }
 }
 
 if (patchedEsmFiles.length > 0) {
   console.log(
     `[cloudflare] Patched ESM server output to avoid global require:\n${patchedEsmFiles.join("\n")}`,
   );
+}
+
+if (fs.existsSync(handlerFile)) {
+  let serverHandlerSource = fs.readFileSync(handlerFile, "utf8");
+  if (!serverHandlerSource.includes("[second-ai-nextjs-request-failed]")) {
+    serverHandlerSource = serverHandlerSource
+      .replaceAll(
+        'error("NextJS request failed.",e)',
+        'console.error("[second-ai-nextjs-request-failed]",{name:e?.name,message:e?.message,stack:e?.stack})',
+      )
+      .replaceAll(
+        'error("NextJS request failed.",e),',
+        'console.error("[second-ai-nextjs-request-failed]",{name:e?.name,message:e?.message,stack:e?.stack}),',
+      );
+    fs.writeFileSync(handlerFile, serverHandlerSource);
+    console.log("[cloudflare] Added Next.js request failure diagnostics.");
+  }
 }
 
 const copyFileIfChanged = (sourcePath, targetPath) => {
