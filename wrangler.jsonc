@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "second-ai",
+  "name": "ai-leo",
   "main": ".open-next/worker.js",
   "no_bundle": true,
   "keep_vars": true,
