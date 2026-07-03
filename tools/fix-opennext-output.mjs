@@ -97,6 +97,121 @@ if (fs.existsSync(middlewareHandlerFile) && patchEsmRequire(middlewareHandlerFil
   patchedEsmFiles.push(path.relative(root, middlewareHandlerFile));
 }
 
+const objectGuardSource = `function __secondAiObjectGuard(value, label) {
+  if (value == null) {
+    const error = new Error("[second-ai-object-guard] " + label + " is " + value);
+    console.error(error.stack);
+    return {};
+  }
+  return value;
+}
+`;
+
+const insertObjectGuard = (source) => {
+  if (source.includes("function __secondAiObjectGuard(")) {
+    return source;
+  }
+
+  const importMatch = source.match(/^(?:import[^\n]*\n)+/);
+  const insertAt = importMatch ? importMatch[0].length : 0;
+  return source.slice(0, insertAt) + objectGuardSource + source.slice(insertAt);
+};
+
+const patchObjectNullRisks = (filePath, label) => {
+  if (!fs.existsSync(filePath)) {
+    return false;
+  }
+
+  let source = fs.readFileSync(filePath, "utf8");
+  const original = source;
+  source = insertObjectGuard(source);
+
+  const replacements = [
+    [
+      "Object.entries(env)",
+      `Object.entries(__secondAiObjectGuard(env, "${label}: env"))`,
+    ],
+    [
+      "Object.entries(runtimeEnv)",
+      `Object.entries(__secondAiObjectGuard(runtimeEnv, "${label}: runtimeEnv"))`,
+    ],
+    [
+      "Object.entries(result.headers)",
+      `Object.entries(__secondAiObjectGuard(result.headers, "${label}: result.headers"))`,
+    ],
+    [
+      "Object.entries(eventHeaders)",
+      `Object.entries(__secondAiObjectGuard(eventHeaders, "${label}: eventHeaders"))`,
+    ],
+    [
+      "Object.entries(query)",
+      `Object.entries(__secondAiObjectGuard(query, "${label}: query"))`,
+    ],
+    [
+      "Object.entries(headers)",
+      `Object.entries(__secondAiObjectGuard(headers, "${label}: headers"))`,
+    ],
+    [
+      "Object.entries(middlewareHeaders)",
+      `Object.entries(__secondAiObjectGuard(middlewareHeaders, "${label}: middlewareHeaders"))`,
+    ],
+    [
+      "Object.entries(AppPathRoutesManifest)",
+      `Object.entries(__secondAiObjectGuard(AppPathRoutesManifest, "${label}: AppPathRoutesManifest"))`,
+    ],
+    [
+      "Object.keys(PagesManifest)",
+      `Object.keys(__secondAiObjectGuard(PagesManifest, "${label}: PagesManifest"))`,
+    ],
+    [
+      "Object.values(AppPathRoutesManifest)",
+      `Object.values(__secondAiObjectGuard(AppPathRoutesManifest, "${label}: AppPathRoutesManifest"))`,
+    ],
+    [
+      "Object.keys(event.headers)",
+      `Object.keys(__secondAiObjectGuard(event.headers, "${label}: event.headers"))`,
+    ],
+    [
+      "Object.keys(process.env)",
+      `Object.keys(__secondAiObjectGuard(process.env, "${label}: process.env"))`,
+    ],
+    [
+      "Object.entries(process.env)",
+      `Object.entries(__secondAiObjectGuard(process.env, "${label}: process.env"))`,
+    ],
+    [
+      "Object.keys(manifest.functions)",
+      `Object.keys(__secondAiObjectGuard(manifest.functions, "${label}: manifest.functions"))`,
+    ],
+    [
+      "manifest.functions[foundPage]",
+      `__secondAiObjectGuard(manifest.functions, "${label}: manifest.functions")[foundPage]`,
+    ],
+  ];
+
+  for (const [from, to] of replacements) {
+    if (source.includes(from) && !source.includes(to)) {
+      source = source.replaceAll(from, to);
+    }
+  }
+
+  if (source !== original) {
+    fs.writeFileSync(filePath, source);
+    return true;
+  }
+
+  return false;
+};
+
+const objectGuardedFiles = [
+  [indexFile, "server index"],
+  [handlerFile, "server handler"],
+];
+
+const patchedObjectGuardFiles = objectGuardedFiles
+  .filter(([filePath, label]) => patchObjectNullRisks(filePath, label))
+  .map(([filePath]) => path.relative(root, filePath));
+
 const cloudflareInitFile = path.join(openNextDir, "cloudflare", "init.js");
 if (fs.existsSync(cloudflareInitFile)) {
   let initSource = fs.readFileSync(cloudflareInitFile, "utf8");
@@ -127,6 +242,21 @@ if (fs.existsSync(middlewareOutputFile)) {
       "const mode = runtimeEnv.NEXTJS_ENV ?? \"production\";",
     );
   fs.writeFileSync(middlewareOutputFile, middlewareSource);
+}
+
+for (const [filePath, label] of [
+  [cloudflareInitFile, "cloudflare init"],
+  [middlewareOutputFile, "middleware handler"],
+]) {
+  if (patchObjectNullRisks(filePath, label)) {
+    patchedObjectGuardFiles.push(path.relative(root, filePath));
+  }
+}
+
+if (patchedObjectGuardFiles.length > 0) {
+  console.log(
+    `[cloudflare] Added object null guards with stack traces:\n${patchedObjectGuardFiles.join("\n")}`,
+  );
 }
 
 const workerFile = path.join(openNextDir, "worker.js");
@@ -167,6 +297,21 @@ if (fs.existsSync(workerFile)) {
                 envKeys: Object.keys(env ?? {}),
                 processEnvKeys: typeof process !== "undefined" ? Object.keys(process.env ?? {}) : [],
             });
+            console.error(normalizedError.stack);
+            const debugUrl = new URL(request.url);
+            if (debugUrl.searchParams.get("__debug") === "1") {
+                return new Response(JSON.stringify({
+                    name: normalizedError.name,
+                    message: normalizedError.message,
+                    stack: normalizedError.stack,
+                    url: request.url,
+                    envKeys: Object.keys(env ?? {}),
+                    processEnvKeys: typeof process !== "undefined" ? Object.keys(process.env ?? {}) : [],
+                }, null, 2), {
+                    status: 500,
+                    headers: { "content-type": "application/json; charset=utf-8" },
+                });
+            }
             return new Response("Internal Server Error", { status: 500 });
         }
     },
